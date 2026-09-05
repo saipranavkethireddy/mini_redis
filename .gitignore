@@ -13,3 +13,4 @@ env/
 .vscode/
 .idea/
 *.swp
+appendonly.aof

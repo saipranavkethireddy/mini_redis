@@ -40,7 +40,7 @@ class RESPParser:
             except ValueError:
                 raise ValueError("Protocol error: invalid bulk string length")
             
-            if length == "-1":
+            if length == -1:
                 del self._buffer[:line_end+2]
                 return None, True
             

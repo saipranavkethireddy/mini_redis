@@ -1,56 +1,95 @@
-# src/persistence/aof.py
 import os
+from pathlib import Path
+
+from src.protocol.resp_encoder import RESPEncoder
+from src.protocol.resp_parser import RESPParser
+
 
 class AppendOnlyFile:
+    """
+    Append Only File (AOF) persistence and recovery.
+
+    Every command is stored using RESP encoding.
+    Commands can later be replayed to reconstruct the store.
+    """
+
     def __init__(self, filepath="appendonly.aof"):
-        self.filepath = filepath
-        # Open file in append mode, creating it if it doesn't exist
-        self.file = open(self.filepath, "a+", encoding="utf-8")
+        self.filepath = Path(filepath)
+
+        # Open in binary append mode.
+        # Creates the file if it doesn't exist.
+        self.file = open(self.filepath, "ab")
 
     def write(self, command: list):
-        """Append a command array to the AOF file using RESP format."""
-        # RESP Array encoding: *<number-of-elements>\r\n$<len>\r\n<element>\r\n...
-        parts = [f"*{len(command)}"]
-        for arg in command:
-            arg_str = str(arg)
-            parts.append(f"${len(arg_str)}")
-            parts.append(arg_str)
-        
-        encoded_command = "\r\n".join(parts) + "\r\n"
-        self.file.write(encoded_command)
-        self.file.flush() # Ensure it writes directly to disk
+        """
+        Append a command to the AOF.
+
+        Example:
+            ["SET", "foo", "bar"]
+
+        is stored as RESP:
+            *3\\r\\n
+            $3\\r\\nSET\\r\\n
+            $3\\r\\nfoo\\r\\n
+            $3\\r\\nbar\\r\\n
+        """
+
+        if not command:
+            return
+
+        encoded = RESPEncoder.encode(command)
+
+        self.file.write(encoded)
+        self.file.flush()
+
+        # Ensure the data is pushed to disk.
+        os.fsync(self.file.fileno())
 
     def load(self):
-        """Read and yield commands line-by-line from the AOF file during server startup."""
-        if not os.path.exists(self.filepath):
+        """
+        Read and decode all commands from the AOF.
+
+        Returns:
+            List of commands.
+        """
+
+        if not self.filepath.exists():
             return []
 
+        with open(self.filepath, "rb") as f:
+            data = f.read()
+
+        if not data:
+            return []
+
+        parser = RESPParser()
+        parser.feed(data)
+
         commands = []
-        with open(self.filepath, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        
-        # Simple parser for replaying command logs on startup
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            if line.startswith("*"):
-                num_elements = int(line[1:])
-                cmd = []
-                i += 1
-                for _ in range(num_elements):
-                    if i < len(lines) and lines[i].startswith("$"):
-                        # Skip length descriptor line, next line is the actual argument
-                        i += 1
-                        if i < len(lines):
-                            cmd.append(lines[i].strip())
-                    i += 1
-                if cmd:
-                    commands.append(cmd)
-            else:
-                i += 1
-                
+
+        while parser._buffer:
+            command, success = parser.parse()
+
+            if not success:
+                # Ignore an incomplete final command.
+                break
+
+            if command is None:
+                continue
+
+            if not isinstance(command, list):
+                raise ValueError(
+                    "Invalid AOF entry: expected RESP array"
+                )
+
+            commands.append(command)
+
         return commands
 
     def close(self):
+        """Flush and close the AOF file."""
+
         if self.file and not self.file.closed:
+            self.file.flush()
+            os.fsync(self.file.fileno())
             self.file.close()

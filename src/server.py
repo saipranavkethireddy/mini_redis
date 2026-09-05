@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import List, Any
 
 # Protocol
 from src.protocol.resp_encoder import RESPEncoder
@@ -11,9 +10,9 @@ from src.store import Store
 from src.commands.dispatcher import CommandDispatcher
 
 # Persistence
-from src.persistence.aof import AOFManager
+from src.persistence.aof import AppendOnlyFile
 
-# Configure logging to monitor server events in the terminal
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -22,105 +21,162 @@ logging.basicConfig(
 
 
 class RedisServer:
-    def __init__(self, host: str = "127.0.0.1", port: int = 6379, aof_filename: str = "appendonly.aof"):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 6379,
+        aof_filename: str = "appendonly.aof"
+    ):
         self.host = host
         self.port = port
 
-        # Protocol parser & encoder
-        self.parser = RESPParser()
-        self.encoder = RESPEncoder()
-
-        # Storage engine & Command router
+        # Storage engine
         self.store = Store()
+
+        # Command router
         self.dispatcher = CommandDispatcher(self.store)
 
-        # Persistence engine
-        self.aof = AOFManager(filename=aof_filename)
+        # Persistence
+        self.aof = AppendOnlyFile(aof_filename)
 
-    async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        """
-        Handles active TCP client socket connection.
-        Reads byte streams, parses RESP frames, executes commands, and returns responses.
-        """
+    async def handle_client(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter
+    ):
         peer = writer.get_extra_info("peername")
         logging.info(f"Client connected from {peer}")
 
-        buffer = bytearray()
+        parser = RESPParser()
 
         try:
             while True:
-                # Read data up to 1024 bytes from the non-blocking socket
                 data = await reader.read(1024)
+
                 if not data:
                     logging.info(f"Client {peer} disconnected")
                     break
 
-                buffer.extend(data)
+                # Give incoming bytes to our RESP parser
+                parser.feed(data)
 
-                # Decode command frames from byte buffer
-                while len(buffer) > 0:
+                # A single TCP read can contain multiple commands
+                while True:
                     try:
-                        parsed_cmd, bytes_read = self.parser.parse(buffer)
+                        command, success = parser.parse()
                     except Exception as e:
-                        logging.error(f"Protocol error from {peer}: {e}")
-                        err_response = self.encoder.encode(Exception(f"ERR Protocol error: {e}"))
-                        writer.write(err_response)
+                        logging.error(
+                            f"Protocol error from {peer}: {e}"
+                        )
+
+                        response = RESPEncoder.encode(
+                            Exception(f"ERR Protocol error: {e}")
+                        )
+
+                        writer.write(response)
                         await writer.drain()
-                        buffer.clear()
+
                         break
 
-                    if parsed_cmd is None or bytes_read == 0:
+                    # Message is incomplete.
+                    # Wait for more data from the client.
+                    if not success:
                         break
 
-                    del buffer[:bytes_read]
+                    if command is None:
+                        continue
 
-                    # Execute command through dispatcher
-                    result = self.dispatcher.dispatch(parsed_cmd)
+                    logging.info(f"Command: {command}")
 
-                    # Log write operations to Append-Only File if execution succeeded
+                    # Execute command
+                    result = self.dispatcher.dispatch(command)
+
+                    # Persist successful mutating commands
                     if not isinstance(result, Exception):
-                        self.aof.log_command(parsed_cmd)
+                        if command[0] in {
+                            "SET",
+                            "DEL",
+                            "INCR",
+                            "HSET",
+                            "HDEL",
+                            "EXPIRE",
+                            "PERSIST"
+                        }:
+                            self.aof.write(command)
 
-                    # Encode result into RESP format and write back to socket
-                    response_bytes = self.encoder.encode(result)
-                    writer.write(response_bytes)
+                    # Send response
+                    response = RESPEncoder.encode(result)
+
+                    writer.write(response)
                     await writer.drain()
 
         except asyncio.CancelledError:
             pass
+
         except Exception as e:
-            logging.error(f"Error handling client {peer}: {e}")
+            logging.error(
+                f"Error handling client {peer}: {e}"
+            )
+
         finally:
             writer.close()
             await writer.wait_closed()
 
     async def start(self):
-        """Starts AOF replay to recover state, opens log file, and launches TCP event loop."""
-        # 1. Replay existing AOF log to restore in-memory state
-        replayed = self.aof.load(self.dispatcher)
-        if replayed > 0:
-            logging.info(f" Restored state from AOF ({replayed} commands replayed)")
+        """
+        Recover the database from the AOF file and
+        then start the TCP server.
+        """
 
-        # 2. Open AOF file handle for append mode
-        self.aof.open()
+        # ------------------------------------------------
+        # 1. Recover previous state from AOF
+        # ------------------------------------------------
 
-        # 3. Start TCP Listener
+        commands = self.aof.load()
+
+        if commands:
+            logging.info(
+                f"Restoring state from AOF "
+                f"({len(commands)} commands)"
+            )
+
+            for command in commands:
+                result = self.dispatcher.dispatch(command)
+
+                if isinstance(result, Exception):
+                    logging.error(
+                        f"Failed to replay command: {command}"
+                    )
+
+        # ------------------------------------------------
+        # 2. Start TCP server
+        # ------------------------------------------------
+
         server = await asyncio.start_server(
-            self.handle_client, self.host, self.port
+            self.handle_client,
+            self.host,
+            self.port
         )
-        logging.info(f"🚀 Mini Redis server listening on {self.host}:{self.port}")
+
+        logging.info(
+            f"Mini Redis server listening on "
+            f"{self.host}:{self.port}"
+        )
 
         try:
             async with server:
                 await server.serve_forever()
+
         finally:
-            # Clean up persistence file handle when server stops
             self.aof.close()
 
 
 if __name__ == "__main__":
-    redis_server = RedisServer(host="127.0.0.1", port=6379)
+    redis_server = RedisServer()
+
     try:
         asyncio.run(redis_server.start())
+
     except KeyboardInterrupt:
         logging.info("Server shutting down gracefully...")
+        

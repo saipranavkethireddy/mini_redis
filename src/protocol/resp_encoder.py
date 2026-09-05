@@ -3,7 +3,7 @@
 class RESPEncoder:
     @staticmethod
     def encode(data) -> bytes:
-        if data in None:
+        if data is None:
             return b"$-1\r\n"
         if isinstance(data, bool):
             return f"{1 if data else 0}\r\n".encode()
