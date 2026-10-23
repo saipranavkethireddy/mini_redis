@@ -48,3 +48,11 @@ def test_recovers_after_protocol_error(tmp_path):     # fails now (buffer not cl
         w.close()
         return data
     assert b"PONG" in asyncio.run(_with_server(tmp_path, run))
+
+def test_expire_logged_as_absolute(tmp_path):
+    async def run(port, srv):
+        await _send(port, b"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n")
+        await _send(port, b"*3\r\n$6\r\nEXPIRE\r\n$1\r\nk\r\n$2\r\n10\r\n")
+        return srv.aof.load()
+    cmds = asyncio.run(_with_server(tmp_path, run))
+    assert cmds[-1][0] == "EXPIREAT"
