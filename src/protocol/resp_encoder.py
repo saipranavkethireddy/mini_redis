@@ -6,7 +6,7 @@ class RESPEncoder:
         if data is None:
             return b"$-1\r\n"
         if isinstance(data, bool):
-            return f"{1 if data else 0}\r\n".encode()
+            return f":{1 if data else 0}\r\n".encode()
         if isinstance(data, int):
             return f":{data}\r\n".encode()
         if isinstance(data, str):
