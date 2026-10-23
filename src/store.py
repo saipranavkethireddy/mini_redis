@@ -1,3 +1,4 @@
+import math
 import time
 from typing import Any, Dict, Optional, List, Union
 
@@ -50,11 +51,11 @@ class Store:
         if key not in self._expires:
             return -1
 
-        remaining = int(self._expires[key] - time.time())
+        remaining = self._expires[key] - time.time()
         if remaining <= 0:
             self.delete(key)
             return -2
-        return remaining
+        return math.ceil(remaining)
 
     def persist(self, key: str) -> int:
         """Removes the existing timeout on key, turning it into a persistent key."""
