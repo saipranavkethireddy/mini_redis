@@ -68,14 +68,14 @@ class RedisServer:
                         logging.error(
                             f"Protocol error from {peer}: {e}"
                         )
+                        parser._buffer.clear()
 
                         response = RESPEncoder.encode(
-                            Exception(f"ERR Protocol error: {e}")
+                            Exception(f"Protocol error: {e}")
                         )
 
                         writer.write(response)
                         await writer.drain()
-
                         break
 
                     # Message is incomplete.
