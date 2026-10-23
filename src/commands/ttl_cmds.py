@@ -19,3 +19,12 @@ def handle_persist(args: List[Any], store: Store) -> Any:
     if len(args) != 1:
         return Exception("ERR wrong number of arguments for 'persist' command")
     return store.persist(args[0])
+
+def handle_expireat(args: List[Any], store: Store) -> Any:
+    if len(args) != 2:
+        return Exception("ERR wrong number of arguments for 'expireat' command")
+    try:
+        ts = float(args[1])
+    except ValueError:
+        return Exception("ERR value is not an integer or out of range")
+    return store.expireat(args[0], ts)

@@ -9,7 +9,7 @@ from src.commands.hash_cmds import(
     handle_hdel,handle_hget,handle_hgetall,handle_hset
 )
 from src.commands.ttl_cmds import (
-    handle_expire,handle_persist,handle_ttl
+    handle_expire,handle_persist,handle_ttl,handle_expireat
 )
 
 commandHandler = Callable[[List[Any],Store],Any]
@@ -35,6 +35,7 @@ class CommandDispatcher:
             "EXPIRE": handle_expire,
             "TTL": handle_ttl,
             "PERSIST": handle_persist,
+            "EXPIREAT": handle_expireat
         }
 
     def dispatch(self, command: List[Any]) -> Any:

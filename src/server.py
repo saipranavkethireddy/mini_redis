@@ -96,7 +96,13 @@ class RedisServer:
                     if not isinstance(result, Exception) and cmd_name in {
                         "SET", "DEL", "INCR", "HSET", "HDEL", "EXPIRE", "PERSIST"
                     }:
-                        self.aof.write(command)
+                        if cmd_name == "EXPIRE":
+                            self.aof.write(["EXPIREAT", command[1], str(self.store._expires[command[1]])])
+                        elif cmd_name == "SET" and len(command) == 5:
+                            self.aof.write(["SET", command[1], command[2]])
+                            self.aof.write(["EXPIREAT", command[1], str(self.store._expires[command[1]])])
+                        else:
+                            self.aof.write(command)
 
                     # Send response
                     response = RESPEncoder.encode(result)

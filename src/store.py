@@ -200,3 +200,9 @@ class Store:
         for f, v in hash_map.items():
             result.extend([f, v])
         return result
+    
+    def expireat(self, key: str, timestamp: float) -> int:
+        if self._is_expired(key) or key not in self._data:
+            return 0
+        self._expires[key] = float(timestamp)
+        return 1
