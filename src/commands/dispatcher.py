@@ -46,7 +46,7 @@ class CommandDispatcher:
 
         handler = self._handlers.get(cmd_name)
         if handler is None:
-            return Exception(f"ERR unknown command '{cmd_name}")
+            return Exception(f"ERR unknown command '{cmd_name}'")
         
         return handler(args, self.store)
 
