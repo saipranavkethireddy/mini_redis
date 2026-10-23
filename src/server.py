@@ -92,17 +92,11 @@ class RedisServer:
                     result = self.dispatcher.dispatch(command)
 
                     # Persist successful mutating commands
-                    if not isinstance(result, Exception):
-                        if command[0] in {
-                            "SET",
-                            "DEL",
-                            "INCR",
-                            "HSET",
-                            "HDEL",
-                            "EXPIRE",
-                            "PERSIST"
-                        }:
-                            self.aof.write(command)
+                    cmd_name = str(command[0]).upper()
+                    if not isinstance(result, Exception) and cmd_name in {
+                        "SET", "DEL", "INCR", "HSET", "HDEL", "EXPIRE", "PERSIST"
+                    }:
+                        self.aof.write(command)
 
                     # Send response
                     response = RESPEncoder.encode(result)
