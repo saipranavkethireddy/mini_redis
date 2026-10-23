@@ -5,7 +5,7 @@ def handle_hset(args: List[Any], store: Store) -> Any:
     if len(args) != 3:
         return Exception("ERR wrong number of arguments for 'hset' command")
     try:
-        return store.hest(args[0],args[1],args[2])
+        return store.hset(args[0],args[1],args[2])
     except TypeError as e:
         return Exception(str(e))
     
