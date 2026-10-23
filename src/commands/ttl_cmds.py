@@ -5,7 +5,7 @@ def handle_expire(args: List[Any], store: Store) -> Any:
     if len(args) != 2:
         return Exception("ERR wrong number of arguments for 'expire' command")
     try:
-        seconds = int(args[0])
+        seconds = int(args[1])
     except ValueError:
         return Exception("ERR value is not an integer or out of range")
     return store.expire(args[0], seconds)
