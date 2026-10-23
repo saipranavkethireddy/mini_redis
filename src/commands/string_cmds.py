@@ -18,13 +18,18 @@ def handle_set(args: List[Any], store: Store) -> Any:
     ttl = None
 
     # EX argument parsing (eg: SET key val EX 60)
-    if len(args) > 4:
-        opt = str(args[2]).upper()
-        if opt == "EX":
-            try:
-                ttl = int(args[3])
-            except ValueError:
-                return Exception("ERR value is not an integer or out of range")
+    if len(args) == 4:
+        if str(args[2]).upper() != "EX":
+            return Exception("ERR syntax error")
+        try:
+            ttl = int(args[3])
+        except ValueError:
+            return Exception("ERR value is not an integer or out of range")
+        if ttl <=0:
+            return Exception("ERR invalid expire time in 'set' command")
+    elif len(args) != 2:
+        return Exception("ERR syntac error")
+
     return store.set(key, val, ttl_seconds=ttl)
 
 def handle_get(args: List[Any], store: Store) -> Any:
